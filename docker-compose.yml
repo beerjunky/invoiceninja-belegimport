@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    image: ninja-belegimport:latest
+    container_name: ninja-belegimport
+    restart: unless-stopped
+    # Läuft als der Host-User, dem ./data gehört (APP_UID/APP_GID in .env)
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    env_file: .env
+    ports:
+      - "127.0.0.1:8013:8000"
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m

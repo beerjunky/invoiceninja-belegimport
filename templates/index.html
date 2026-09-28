@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf" content="{{ csrf_token() }}">
+  <meta name="max-mb" content="{{ max_mb }}">
+  <meta name="extract" content="{{ '1' if extract else '0' }}">
+  <title>Ninja-Belegimport</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <h1>Ninja-Belegimport</h1>
+    <a href="{{ ninja_url }}/expenses" target="_blank" rel="noopener">Ausgaben in Invoice Ninja ↗</a>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" class="link">Abmelden</button>
+    </form>
+  </header>
+
+  <main>
+    <section class="queue">
+      <label id="drop" class="drop">
+        <input id="picker" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*" hidden>
+        <strong>Belege hierher ziehen</strong>
+        <span>oder klicken · PDF, JPG, PNG, HEIC · max. {{ max_mb }} MB</span>
+      </label>
+      <ul id="list"></ul>
+    </section>
+
+    <section class="preview" id="preview"><p class="hint">Kein Beleg ausgewählt.</p></section>
+
+    <section class="form">
+      <form id="expense" autocomplete="off">
+        <div id="extract-status" class="msg" hidden></div>
+        <label>Lieferant
+          <input id="vendor" list="vendors" required placeholder="Name – neuer Name wird angelegt">
+          <datalist id="vendors"></datalist>
+          <small id="vendor-hint"></small>
+        </label>
+        <div class="row">
+          <label>Rechnungsdatum <input id="date" type="date" required></label>
+          <label>Rechnungsnr. <input id="invoice"></label>
+        </div>
+        <div class="row">
+          <label>Bruttobetrag (€) <input id="amount" inputmode="decimal" required placeholder="0,00"></label>
+          <label>MwSt-Satz
+            <select id="tax">
+              <option value="19">19 %</option>
+              <option value="7">7 %</option>
+              <option value="0">0 %</option>
+            </select>
+          </label>
+        </div>
+        <label>Kategorie <select id="category"><option value="">– keine –</option></select></label>
+        <label>Notiz <textarea id="note" rows="2"></textarea></label>
+        <button type="submit" id="save" disabled>Ausgabe anlegen</button>
+        <div id="msg" class="msg" hidden></div>
+      </form>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
