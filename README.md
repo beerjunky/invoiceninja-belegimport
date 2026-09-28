@@ -62,7 +62,13 @@ docker compose up -d --build
 curl -s http://127.0.0.1:8013/healthz   # {"status":"ok"}
 ```
 
-### Reverse Proxy (nginx)
+### Reverse Proxy
+
+Die App lauscht nur auf `127.0.0.1:8013` und braucht einen Reverse Proxy mit **HTTPS** davor.
+Ohne HTTPS klappt der Login nicht: Das Sitzungs-Cookie wird absichtlich nur verschlüsselt übertragen
+(`COOKIE_SECURE=1`). Nur für lokale Tests darf `COOKIE_SECURE=0` gesetzt werden.
+
+#### nginx
 
 ```nginx
 location / {
@@ -76,8 +82,47 @@ location / {
 ```
 
 `X-Forwarded-For` bitte **überschreiben** (wie oben), nicht anhängen – die Login-Sperre arbeitet pro IP.
-**Plesk:** Subdomain anlegen, Let's Encrypt aktivieren, unter „Apache & nginx“ den Proxy-Modus aus und
-den Block oben bei „Zusätzliche nginx-Anweisungen“ eintragen.
+
+#### Plesk
+
+Subdomain anlegen, Let's Encrypt aktivieren, unter „Apache & nginx“ den Proxy-Modus aus und den
+nginx-Block oben bei „Zusätzliche nginx-Anweisungen“ eintragen.
+
+#### Caddy
+
+Caddy holt das Let's-Encrypt-Zertifikat automatisch:
+
+```
+belege.example.com {
+    request_body {
+        max_size 25MB
+    }
+    reverse_proxy 127.0.0.1:8013
+}
+```
+
+#### Nginx Proxy Manager
+
+Nginx Proxy Manager läuft selbst in Docker und erreicht `127.0.0.1` des Hosts nicht. Hänge die App
+deshalb zusätzlich in das Docker-Netzwerk von Nginx Proxy Manager (Name z. B. per `docker network ls`):
+
+```yaml
+# docker-compose.override.yml
+services:
+  app:
+    networks: [default, npm]
+networks:
+  npm:
+    external: true
+    name: npm_default   # Netzwerk deines Nginx Proxy Managers
+```
+
+Dann in Nginx Proxy Manager einen **Proxy Host** anlegen:
+
+- *Domain Names:* `belege.example.com`
+- *Scheme:* `http`, *Forward Hostname:* `ninja-belegimport`, *Forward Port:* `8000`
+- *SSL:* „Request a new SSL Certificate“ und „Force SSL“ aktivieren
+- *Advanced:* `client_max_body_size 25m;`
 
 ### Backup
 
