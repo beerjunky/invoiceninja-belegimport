@@ -58,6 +58,7 @@ class Ninja:
 
     def __init__(self, base_url, token):
         self.base = base_url.rstrip("/") + "/api/v1"
+        self._country = None
         self.s = requests.Session()
         self.s.headers.update({"X-API-TOKEN": token, "X-Requested-With": "XMLHttpRequest", "Accept": "application/json"})
 
@@ -105,8 +106,20 @@ class Ninja:
         with_cat = [e for e in self.vendor_expenses(vendor_id) if e.get("category_id")]
         return max(with_cat, key=lambda e: e.get("date") or "")["category_id"] if with_cat else None
 
+    def company_country(self):
+        """Land der eigenen Firma – ohne Angabe setzt IN neue Lieferanten auf das erste Land der Liste."""
+        if self._country is None:
+            try:
+                self._country = str(self._call("GET", "/companies")["data"][0]["settings"]["country_id"] or "")
+            except (NinjaError, KeyError, IndexError, TypeError):
+                return ""
+        return self._country
+
     def create_vendor(self, name):
-        return self._call("POST", "/vendors", json={"name": name})["data"]
+        payload = {"name": name}
+        if self.company_country():
+            payload["country_id"] = self.company_country()
+        return self._call("POST", "/vendors", json=payload)["data"]
 
     def create_expense(self, payload):
         return self._call("POST", "/expenses", json=payload)["data"]
