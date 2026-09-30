@@ -105,6 +105,66 @@ Datum: 22.09.2926 Beleg-Nr 88213""", vendors=[])
         self.assertEqual(r["date"], "2026-09-22")
 
 
+class ZahlungTest(unittest.TestCase):
+    def test_kassenbon_bar_ist_bezahlt_am_belegdatum(self):
+        r = parse("MediaMarkt Leipzig\nSUMME EUR 37,98\nGegeben BAR 50,00\nRückgeld 12,02\n24.09.26 14:33 Bon-Nr 4711")
+        self.assertEqual((r["paid"], r["payment_date"], r["payment_type_id"]), (True, "2026-09-24", "2"))
+
+    def test_kartenzahlung_schlaegt_bar(self):
+        r = parse("GLOBUS\nSUMME 25,89\nGegeben girocard 25,89\nKundenbeleg\nDatum 31.07.2026")
+        self.assertEqual((r["paid"], r["payment_type_id"]), (True, "3"))
+
+    def test_online_rechnung_mit_zahlungsdatum(self):
+        r = parse("""HB-DIGITAL GmbH
+Rechnung AU20263733709 02.09.2026
+Gesamtpreis Brutto 7,20 €
+Zahlung (Amazon Payment) vom 03.09.2026 7,20 €""")
+        self.assertTrue(r["paid"])
+        self.assertEqual(r["payment_date"], "2026-09-03")
+
+    def test_paypal(self):
+        r = parse("Shop GmbH\nRechnungsdatum 10.09.2026\nGesamt 19,99 €\nBezahlt per PayPal")
+        self.assertEqual((r["paid"], r["payment_date"], r["payment_type_id"]), (True, "2026-09-10", "13"))
+
+    def test_lastschrift_ist_noch_offen(self):
+        r = parse("STRATO GmbH\nRechnungsdatum: 13.09.2026\nGesamtbetrag 18,00 EUR\n"
+                  "Der Betrag wird von Ihrem Konto abgebucht.")
+        self.assertEqual((r["paid"], r["payment_date"], r["payment_type_id"]), (False, None, "42"))
+
+    def test_zahlungsziel_ist_offen(self):
+        r = parse("Firma X GmbH\nRechnungsdatum 01.09.2026\nGesamtbetrag 119,00 €\n"
+                  "Zahlbar bis 15.09.2026 per Überweisung auf das Konto DE12 3456")
+        self.assertEqual((r["paid"], r["payment_type_id"]), (False, "1"))
+
+    def test_ohne_hinweis_nichts_vorschlagen(self):
+        r = parse("Firma X GmbH\nRechnungsdatum 01.09.2026\nGesamtbetrag 119,00 €")
+        self.assertEqual((r["paid"], r["payment_type_id"]), (False, None))
+
+
+class ZahlungEchteBelegeTest(unittest.TestCase):
+    """Formulierungen aus echten Belegen (anonymisiert)."""
+
+    def test_amazon_rechnung_ist_bezahlt(self):
+        r = parse("Amazon EU S.a r.l.\nRechnungsdatum 04.08.2026\nZahlungsreferenznummer 4HN3YN8OUCJBH700\nZahlbetrag 23,70 €")
+        self.assertEqual((r["paid"], r["payment_date"]), (True, "2026-08-04"))
+
+    def test_kartenzahlung_zerlegt_mit_sepa_ist_ec(self):
+        r = parse("GLOBUS\nSUMME 25,89\nKartenzah | ung\nSEPA Lastschrift\nZahlung erfolgt\nDatum 31.07.2026")
+        self.assertEqual((r["paid"], r["payment_type_id"]), (True, "3"))
+
+    def test_abbuchung_von_konto_ist_lastschrift(self):
+        for satz in ("Der oben ausgewiesene Rechnungsbetrag wird von dem folgenden Konto abgebucht:",
+                     "Der Rechnungsbetrag wird von folgendem Konto eingezogen:",
+                     "Wir buchen den Betrag am 30.09.2026 unter Ihrer Mandatsreferenz MAN-1 von Ihrem Konto ab."):
+            r = parse(f"Firma X GmbH\nRechnungsdatum 01.09.2026\nGesamtbetrag 21,60 €\n{satz}")
+            self.assertEqual((r["paid"], r["payment_type_id"]), (False, "42"), satz)
+
+    def test_angegeben_ist_nicht_bar(self):
+        r = parse("Shop GmbH\nRechnungsdatum 20.09.2026\nGesamt 12,95 €\n"
+                  "Wir bitten diese Rechnung spätestens bis zum oben angegebenem Zahlungsziel zu bezahlen.")
+        self.assertEqual((r["paid"], r["payment_type_id"]), (False, None))
+
+
 class RobustheitTest(unittest.TestCase):
     def test_eigene_firma_wird_nie_lieferant(self):
         r = parse("Muster IT GmbH\nRechnung\nGesamt 10,00 €", vendors=[{"id": "x", "name": "Muster IT"}])

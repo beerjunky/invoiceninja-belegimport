@@ -24,6 +24,9 @@ lokal archiviert.
   - Bruttobetrag wird gegen Netto + MwSt im Beleg gegengerechnet (fängt OCR-Ziffernfehler ab)
   - Lieferant wird mit den Lieferanten in Invoice Ninja abgeglichen, Kategorie vom letzten Beleg übernommen
   - Werte sind nur Vorschläge, farblich markiert (grün = sicher, gelb = prüfen) – gespeichert wird nur per Klick
+- **Zahlung**: „Bereits bezahlt“ mit Datum und Zahlungsart (Überweisung, Lastschrift, PayPal, EC, Karte, Bar …).
+  Die Auslese erkennt Kassenbons, Kartenbelege, Online-Rechnungen und Lastschrift-Hinweise und schlägt es vor –
+  wichtig für die EÜR, wo eine Ausgabe im Jahr der Zahlung zählt
 - **Dubletten-Warnung**: gleiche Datei, gleiche Rechnungsnummer oder gleicher Betrag am selben Tag –
   geprüft im Archiv *und* in Invoice Ninja
 - **GoBD-freundliches Archiv**: unverändertes Original unter `data/belege/JJJJ/MM/` plus JSON mit
@@ -54,7 +57,13 @@ mkdir -p data/belege
 ```
 
 `.env` ausfüllen: `NINJA_URL`, `NINJA_TOKEN`, `APP_USER`, `SECRET_KEY`, `OWN_NAMES` (deine Firma) und
-`APP_UID`/`APP_GID` (Ausgabe von `id -u` / `id -g`). Dann Passwort setzen und starten:
+`APP_UID`/`APP_GID` (Ausgabe von `id -u` / `id -g`).
+
+Invoice Ninja hat kein eigenes Feld für die **Rechnungsnummer des Lieferanten**. Lege dafür unter
+*Einstellungen → Benutzerdefinierte Felder → Ausgaben* ein Feld an (z. B. „Rechnungsnr. Lieferant“).
+Die App schreibt standardmäßig in Feld 1 (`INVOICE_NUMBER_FIELD=custom_value1`).
+
+Dann Passwort setzen und starten:
 
 ```sh
 python3 set_password.py      # fragt das Passwort ab (min. 16 Zeichen) und trägt den Hash in .env ein
@@ -136,13 +145,16 @@ Sichere `data/` zusammen mit deinem Invoice-Ninja-Backup. Dort liegen die Origin
 | `APP_USER`, `APP_PASSWORD_HASH` | Login (Hash via `set_password.py`) |
 | `SECRET_KEY` | Sitzungsschlüssel, min. 32 Zeichen |
 | `EXTRACTOR` | `tesseract` (Standard) oder `none` (nur manuelle Eingabe) |
+| `INVOICE_NUMBER_FIELD` | benutzerdefiniertes Ausgaben-Feld für die Lieferanten-Rechnungsnr. (`custom_value1`…`4`) |
 | `OWN_NAMES` | eigene Firmennamen, kommagetrennt – nie als Lieferant vorgeschlagen |
 | `APP_UID`, `APP_GID` | Host-User, dem `./data` gehört |
 | `COOKIE_SECURE` | `1` (Standard); `0` nur für lokale Tests ohne HTTPS |
 
 ## Verhalten im Detail
 
-- Betrag = Brutto, `uses_inclusive_taxes=true`, Steuer „USt“ 19 % / 7 % oder 0 %; Rechnungsnummer → `transaction_reference`
+- Betrag = Brutto, `uses_inclusive_taxes=true`, Steuer „USt“ 19 % / 7 % oder 0 %; Rechnungsnummer → benutzerdefiniertes Feld
+- „Bereits bezahlt“ → `payment_date` + `payment_type_id`; `transaction_reference` bleibt frei für die Zahlungsreferenz
+- Neue Lieferanten bekommen das Land der eigenen Firma aus Invoice Ninja
 - Unbekannter Lieferant wird in Invoice Ninja angelegt
 - Upload schlägt fehl → Ausgabe bleibt bestehen und wird intern mit „BELEG FEHLT“ markiert
   (Invoice Ninja vergibt Nummern fortlaufend; Löschen wäre nur ein Soft-Delete mit verbrauchter Nummer)

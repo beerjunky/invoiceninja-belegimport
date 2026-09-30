@@ -54,6 +54,11 @@
           </label>
         </div>
         <label>Kategorie <select id="category"><option value="">– keine –</option></select></label>
+        <label class="check"><input type="checkbox" id="paid"> Bereits bezahlt</label>
+        <div id="paid-fields" hidden>
+          <label>Bezahlt am <input id="paydate" type="date"></label>
+          <label>Zahlungsart <select id="paytype"><option value="">– bitte wählen –</option></select></label>
+        </div>
         <label>Notiz <textarea id="note" rows="2"></textarea></label>
         <button type="submit" id="save" disabled>Ausgabe anlegen</button>
         <div id="msg" class="msg" hidden></div>

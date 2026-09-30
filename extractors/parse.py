@@ -257,4 +257,55 @@ def parse_fields(text, vendors=(), own_names=(), today=None):
         "invoice_number": inv, "currency": currency,
         "confidence": {k: v for k, v in conf.items() if v}, "overall": overall,
         "warnings": warnings,
+        **find_payment(text, lines, d, today),
+    }
+
+
+# Zahlungsarten -> Invoice-Ninja-payment_type_id (statics). Reihenfolge = Priorität.
+PAYMENT_PATTERNS = [
+    ("13", re.compile(r"paypal", re.I)),
+    ("7", re.compile(r"american\s*express|\bamex\b", re.I)),
+    ("5", re.compile(r"\bvisa\b", re.I)),
+    ("6", re.compile(r"master\s*card", re.I)),
+    ("20", re.compile(r"\bmaestro\b", re.I)),
+    # OCR zerlegt "Kartenzahlung" gern ("Kartenzah | ung", "Kartenzah lung").
+    ("3", re.compile(r"girocard|\bec[-\s]?karte|\bec[-\s]?cash|karten\s*zah\W{0,3}l?\W{0,2}ung|debit\s*card|\bdebit\b", re.I)),
+    ("12", re.compile(r"kreditkarte|credit\s*card", re.I)),
+    ("42", re.compile(r"lastschrift|mandatsreferenz|sepa[-\s]?mandat|abgebucht|eingezogen|abbuchung|von\s+ihrem\s+konto\s+ab\b", re.I)),
+    ("2", re.compile(r"\bbar\b|barzahlung|\bcash\b|\bgegeben\b", re.I)),
+    ("1", re.compile(r"überweisung|ueberweisung|bank\s*transfer", re.I)),
+]
+# Sofort bezahlt: Bon/Kartenbeleg, Online-Zahlung, ausdrücklicher Vermerk.
+PAID_HINTS = re.compile(
+    r"rückgeld|rueckgeld|kundenbeleg|händlerbeleg|haendlerbeleg|bereits\s+bezahlt|betrag\s+(?:dankend\s+)?erhalten|"
+    r"zahlung\s+erhalten|zahlung\s+erfolgt|bezahlt\s+(?:am|mit|per|via)|beglichen|\bpaid\b|zahlung\s*\(.*?\)\s*vom|amount\s+paid|"
+    r"zahlungsreferenznummer", re.I)  # Amazon stellt Rechnungen erst nach der Zahlung aus
+# Offen: Zahlungsaufforderung ohne Hinweis auf bereits erfolgte Zahlung.
+OPEN_HINTS = re.compile(r"zahlbar\s+(?:bis|innerhalb)|bitte\s+überweisen|bitte\s+ueberweisen|zahlungsziel|fällig\s+am|faellig\s+am|due\s+date", re.I)
+PAID_DATE = re.compile(r"(?:bezahlt\s+am|zahlung\s*(?:\(.*?\))?\s*vom|paid\s+on|zahlungsdatum)\s*:?\s*", re.I)
+
+
+def find_payment(text, lines, invoice_date, today):
+    """Vorschlag: bezahlt ja/nein, Datum, Zahlungsart. Nur Vorschlag – der Nutzer bestätigt."""
+    ptype = next((pid for pid, rx in PAYMENT_PATTERNS if rx.search(text)), None)
+    paid = bool(PAID_HINTS.search(text)) or ptype in ("2", "3", "5", "6", "7", "12", "13", "20")
+    if OPEN_HINTS.search(text) and not PAID_HINTS.search(text):
+        paid = False
+    # Lastschrift wird erst später abgebucht -> Art vorschlagen, aber nicht als bezahlt markieren.
+    if ptype == "42" and not PAID_HINTS.search(text):
+        paid = False
+    pdate = None
+    if paid:
+        for i, line in enumerate(lines):
+            m = PAID_DATE.search(line)
+            if m:
+                rest = line[m.end():] + " " + (lines[i + 1] if i + 1 < len(lines) else "")
+                pdate, _ = find_date([rest], today)
+                if pdate:
+                    break
+        pdate = pdate or invoice_date
+    return {
+        "paid": paid,
+        "payment_date": pdate.isoformat() if pdate else None,
+        "payment_type_id": ptype,
     }

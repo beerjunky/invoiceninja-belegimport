@@ -58,3 +58,6 @@ body.login { display: grid; place-items: center; min-height: 100vh; }
   .preview { min-height: 60vh; }
 }
 .card .foot { margin: 1rem 0 0; font-size: .8rem; color: var(--muted); text-align: center; }
+label.check { display: flex; align-items: center; gap: .5rem; color: var(--text); font-size: .9rem; }
+label.check input { width: auto; margin: 0; }
+label.check.vorschlag-text { color: var(--warn); }

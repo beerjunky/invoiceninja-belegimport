@@ -63,6 +63,20 @@ function applyExtraction(x) {
   set("gross", x.gross ? x.gross.replace(".", ",") : null);
   set("vat_rate", x.vat_rate);
   set("invoice_number", x.invoice_number);
+  // Zahlung: nur vorschlagen, wenn der Nutzer noch nichts gewählt hat.
+  if (!$("paid").checked && !$("paytype").value) {
+    if (x.payment_type_id && [...$("paytype").options].some((o) => o.value === x.payment_type_id)) {
+      $("paytype").value = x.payment_type_id;
+      markSuggested("paytype", "mittel");
+    }
+    if (x.paid) {
+      $("paid").checked = true;
+      $("paydate").value = x.payment_date || $("date").value;
+      markSuggested("paydate", "mittel");
+      $("paid").parentElement.classList.add("vorschlag-text");
+    }
+    togglePaid();
+  }
   $("vendor").dispatchEvent(new Event("input"));
   if (conf.vendor) markSuggested("vendor", conf.vendor);
   if (x.category_id && [...$("category").options].some((o) => o.value === x.category_id)) {
@@ -129,6 +143,9 @@ async function loadLookups() {
     $("vendors").replaceChildren(...vendors.map((v) => Object.assign(document.createElement("option"), { value: v.name })));
     const cats = data.categories.sort((a, b) => a.name.localeCompare(b.name, "de"));
     $("category").append(...cats.map((c) => Object.assign(document.createElement("option"), { value: c.id, textContent: c.name })));
+    if ($("paytype").options.length === 1) {
+      $("paytype").append(...data.payment_types.map((t) => Object.assign(document.createElement("option"), { value: t.id, textContent: t.name })));
+    }
   } catch (e) {
     showMsg("Lieferanten/Kategorien konnten nicht geladen werden: " + e.message, "err");
   }
@@ -218,12 +235,23 @@ function selectNext() {
   }
 }
 
+function togglePaid() {
+  $("paid-fields").hidden = !$("paid").checked;
+  $("paydate").required = $("paytype").required = $("paid").checked;
+  if ($("paid").checked && !$("paydate").value) $("paydate").value = $("date").value || today();
+}
+
+$("paid").addEventListener("change", () => { $("paid").parentElement.classList.remove("vorschlag-text"); togglePaid(); });
+
 function resetForm() {
   $("expense").reset();
   $("date").value = today();
   $("date").max = today();
   $("vendor-hint").textContent = "";
   clearSuggested();
+  $("paid").parentElement.classList.remove("vorschlag-text");
+  $("paydate").max = today();
+  togglePaid();
   setStatus("");
   showMsg("");
 }
@@ -260,6 +288,11 @@ async function save(force) {
   fd.append("category_id", $("category").value);
   fd.append("invoice_number", $("invoice").value.trim());
   fd.append("note", $("note").value.trim());
+  if ($("paid").checked) {
+    fd.append("paid", "1");
+    fd.append("payment_date", $("paydate").value);
+    fd.append("payment_type_id", $("paytype").value);
+  }
   if (it.extraction && !it.extraction.failed) {
     const { duplicates, ...x } = it.extraction;
     fd.append("extraction", JSON.stringify(x));

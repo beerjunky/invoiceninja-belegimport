@@ -28,6 +28,13 @@ from images import prepare_for_upload
 
 MAX_UPLOAD_MB = 20
 TAX_RATES = {"19": ("USt", 19), "7": ("USt", 7), "0": ("", 0)}
+# Gängige Zahlungsarten (IDs aus den Invoice-Ninja-Stammdaten /api/v1/statics), in dieser Reihenfolge angezeigt.
+PAYMENT_TYPES = [
+    ("1", "Überweisung"), ("42", "Lastschrift"), ("13", "PayPal"), ("3", "EC-/Girocard"),
+    ("12", "Kreditkarte"), ("5", "Visa"), ("6", "Mastercard"), ("7", "American Express"),
+    ("20", "Maestro"), ("2", "Bar"), ("47", "Klarna"), ("32", "Gutschrift"),
+]
+PAYMENT_TYPE_IDS = {pid for pid, _ in PAYMENT_TYPES}
 
 # Magic Bytes -> (Endung, MIME). HEIC/HEIF erkennt man am ftyp-Brand ab Offset 4.
 HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"}
@@ -162,6 +169,10 @@ def create_app():
     extractor = get_extractor(os.environ.get("EXTRACTOR", "none"))
     # Eigene Namen (Rechnungsempfänger), damit die Auslese sie nicht für den Lieferanten hält.
     own_names = [n.strip() for n in os.environ.get("OWN_NAMES", "").split(",") if n.strip()]
+    # Invoice Ninja hat kein eigenes Feld für die Rechnungsnummer des Lieferanten -> benutzerdefiniertes Feld.
+    inv_field = os.environ.get("INVOICE_NUMBER_FIELD", "custom_value1")
+    if inv_field not in ("custom_value1", "custom_value2", "custom_value3", "custom_value4"):
+        sys.exit("INVOICE_NUMBER_FIELD muss custom_value1..4 sein")
 
     # Login-Drossel: 5 Fehlversuche pro IP in 15 Minuten, dann Sperre bis Fensterende.
     failures, fail_lock = {}, threading.Lock()
@@ -255,7 +266,8 @@ def create_app():
     @login_required
     def lookups():
         try:
-            return jsonify(vendors=ninja.vendors(), categories=ninja.categories())
+            return jsonify(vendors=ninja.vendors(), categories=ninja.categories(),
+                           payment_types=[{"id": i, "name": n} for i, n in PAYMENT_TYPES])
         except NinjaError as e:
             return jsonify(error=str(e)), 502
 
@@ -316,8 +328,9 @@ def create_app():
                 for e in ninja.vendor_expenses(vendor_id):
                     if e["id"] in seen:
                         continue
-                    ref = (e.get("transaction_reference") or "").strip().casefold()
-                    if inv and ref == inv:
+                    # Neues Feld plus transaction_reference (dort lag die Nummer bis Oktober 2026).
+                    refs = {(e.get(k) or "").strip().casefold() for k in (inv_field, "transaction_reference")}
+                    if inv and inv in refs:
                         reason = "gleiche Rechnungsnr. in IN"
                     elif amt is not None and when and e.get("date") == when.isoformat() \
                             and Decimal(str(e.get("amount"))) == amt:
@@ -408,11 +421,19 @@ def create_app():
             when = datetime.strptime(form.get("date", ""), "%Y-%m-%d").date()
         except ValueError:
             when = None
+        paid = form.get("paid") == "1"
+        pay_type = form.get("payment_type_id", "")
+        try:
+            pay_date = datetime.strptime(form.get("payment_date", ""), "%Y-%m-%d").date() if paid else None
+        except ValueError:
+            pay_date = None
         problems = [msg for ok, msg in (
             (vendor_name or vendor_id, "Lieferant fehlt"),
             (amount, "Betrag ungültig"),
             (tax, "MwSt-Satz ungültig"),
             (when and when <= date.today(), "Datum ungültig oder in der Zukunft"),
+            (not paid or (pay_date and pay_date <= date.today()), "Zahlungsdatum ungültig oder in der Zukunft"),
+            (not paid or pay_type in PAYMENT_TYPE_IDS, "Zahlungsart fehlt"),
         ) if not ok]
         if problems:
             return jsonify(error=", ".join(problems)), 400
@@ -432,7 +453,9 @@ def create_app():
         local = store_local(content, ext, when, vendor_name or vendor_id, sha)
         meta = {"sha256": sha, "original_name": f.filename, "vendor": vendor_name, "date": when.isoformat(),
                 "amount": str(amount), "tax_rate": tax[1], "invoice_number": invoice_number,
-                "category_id": form.get("category_id", ""), "imported_at": datetime.now().isoformat(timespec="seconds")}
+                "category_id": form.get("category_id", ""), "paid": paid,
+                "payment_date": pay_date.isoformat() if pay_date else None, "payment_type_id": pay_type if paid else None,
+                "imported_at": datetime.now().isoformat(timespec="seconds")}
         # Vorschlag der Auslese mitschreiben -> Trefferquote später auswertbar.
         raw = form.get("extraction", "")
         if raw and len(raw) < 8192:
@@ -452,8 +475,10 @@ def create_app():
             payload = {
                 "vendor_id": vendor_id, "date": when.isoformat(), "amount": float(amount),
                 "uses_inclusive_taxes": True, "tax_name1": tax[0], "tax_rate1": tax[1],
-                "transaction_reference": meta["invoice_number"], "public_notes": form.get("note", "").strip(),
+                inv_field: meta["invoice_number"], "public_notes": form.get("note", "").strip(),
             }
+            if paid:
+                payload.update(payment_date=pay_date.isoformat(), payment_type_id=pay_type)
             if form.get("category_id"):
                 payload["category_id"] = form["category_id"]
             expense = ninja.create_expense(payload)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 – 2026-09-30
+
+- Zahlung erfassen: „Bereits bezahlt“, Zahlungsdatum und Zahlungsart; Vorschlag aus dem Beleg
+  (Kassenbon/Kartenbeleg, Amazon, PayPal, Lastschrift-Hinweise)
+- Lieferanten-Rechnungsnummer in einem benutzerdefinierten Feld statt in `transaction_reference`
+  (Dublettenprüfung berücksichtigt beide Felder)
+- Neue Lieferanten erhalten das Land der eigenen Firma (vorher setzte Invoice Ninja das erste Land der Liste)
+
 ## 1.0.0 – 2026-09-25
 
 Erste öffentliche Version.
